@@ -1,0 +1,84 @@
+config {
+  type: "incremental",
+  schema: "curated",
+  tags: ["incremental", "deduplicated"],
+  uniqueKey: ["id_cliente"],
+  description: "Modelo de Deduplicação Incremental. Processa lotes de dados recentes com janela móvel de segurança e consolida via uniqueKey (MERGE no BigQuery).",
+  bigquery: {
+    partitionBy: "DATE(dth_atualizacao)",
+    
+    // Otimização de custo: limita quais partições existentes o BigQuery examina ao realizar o MERGE
+    updatePartitionFilter:
+      "dth_atualizacao >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 7 DAY)"
+  }
+}
+
+/*
+  ==============================================================================
+  DEDUPLICAÇÃO INCREMENTAL NO DATAFORM:
+  ------------------------------------------------------------------------------
+  1. PRIMEIRA EXECUÇÃO (incremental() = false):
+     - Executa a query completa sobre a camada normalizada.
+     - Aplica o ROW_NUMBER() para deduplicar todo o histórico inicial.
+     - Cria a tabela física particionada no BigQuery.
+
+  2. EXECUÇÕES SUBSEQUENTES (incremental() = true):
+     - Aplica o filtro da cláusula ${when(incremental(), ...)}.
+     - Lê apenas os registros dentro da janela definida (ex: últimos 7 dias).
+     - Deduplica dentro desse lote recente (QUALIFY ROW_NUMBER() = 1).
+     - Com base na "uniqueKey":
+         * Se o id_cliente já existe na tabela de destino: ATUALIZA (UPDATE).
+         * Se o id_cliente é novo: INSERE (INSERT).
+
+  3. POR QUE USAR JANELA MÓVEL (LOOKBACK WINDOW) EM VEZ DE APENAS MAX(data)?
+     - Registros vindos do PostgreSQL/Dataflow podem chegar fora de ordem ou com atraso.
+     - Se utilizássemos apenas "WHERE dth_atualizacao > MAX(dth_atualizacao)", qualquer
+       registro com timestamp retroativo que chegasse depois seria ignorado.
+     - A janela de segurança (ex: 7 dias) reprocessa as atualizações recentes sem 
+       reconstruir a tabela inteira.
+  ==============================================================================
+*/
+
+SELECT
+    id_cliente,
+    nome_cliente,
+    email,
+    valor,
+    dt_nascimento,
+    dth_atualizacao,
+    dth_insert,
+    status_cliente,
+    CURRENT_TIMESTAMP() AS dth_processamento
+
+FROM ${ref("normalizacao_table")}
+
+${when(incremental(), `
+  -- Janela de tolerância para dados atrasados (Late-arriving data)
+  WHERE dth_atualizacao >= TIMESTAMP_SUB(
+      CURRENT_TIMESTAMP(),
+      INTERVAL 7 DAY
+  )
+`, `
+  -- Executado apenas na primeira carga (carga full inicial)
+  -- Pode receber filtros opcionais de corte histórico, se necessário
+`)}
+
+/*
+  ------------------------------------------------------------------------------
+  NOTA ALTERNATIVA: FILTRO POR HIGH-WATERMARK VIA self()
+  Caso prefira buscar estritamente o maior timestamp gravado na própria tabela:
+
+  WHERE dth_atualizacao >= (
+      SELECT COALESCE(MAX(dth_atualizacao), TIMESTAMP("1900-01-01"))
+      FROM self()
+  )
+  ------------------------------------------------------------------------------
+*/
+
+-- Garante que, dentro do lote incremental lido, apenas a versão mais recente sobreviva
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY id_cliente
+    ORDER BY
+        dth_atualizacao DESC,
+        dth_insert DESC
+) = 1

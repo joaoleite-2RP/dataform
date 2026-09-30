@@ -1,0 +1,51 @@
+config {
+  type: "table",
+  schema: "normalized",
+  tags: ["normalized", "table"],
+  description: "Modelo de Normalização (TABLE). Materializa uma fronteira física entre RAW e dados tratados, otimizando consultas subsequentes.",
+  bigquery: {
+    partitionBy: "DATE(dth_atualizacao)",
+    clusterBy: ["id_cliente"]
+  }
+}
+
+/*
+  ==============================================================================
+  OBJETIVO DA NORMALIZAÇÃO (TABLE):
+  ------------------------------------------------------------------------------
+  - Cria uma fronteira física materializada entre a camada RAW e os dados tratados
+  - Permite particionamento (partitionBy) e ordenação por blocos (clusterBy)
+  - Ideal quando o volume é significativo ou a tabela será reutilizada por múltiplos modelos
+  - Padroniza tipos, strings, datas e trata nulos
+  - NÃO realiza deduplicação (preserva o histórico para o passo seguinte)
+  
+  QUANDO USAR TABLE:
+  - Volume de dados alto
+  - Camada de deduplicação ou analítica fará leituras frequentes dessa tabela
+  - Necessidade de particionamento físico no BigQuery para controle de custos
+  ==============================================================================
+*/
+
+SELECT
+    -- Identificador e chaves lógicas
+    CAST(id AS INT64) AS id_cliente,
+
+    -- Padronização de strings
+    UPPER(TRIM(nome)) AS nome_cliente,
+    LOWER(TRIM(email)) AS email,
+    
+    -- Conversões seguras de valores numéricos
+    SAFE_CAST(valor AS NUMERIC) AS valor,
+    
+    -- Padronização de datas e timestamps
+    SAFE_CAST(data_nascimento AS DATE) AS dt_nascimento,
+    SAFE_CAST(data_atualizacao AS TIMESTAMP) AS dth_atualizacao,
+    SAFE_CAST(data_criacao AS TIMESTAMP) AS dth_insert,
+    
+    -- Tratamento de nulos
+    COALESCE(TRIM(status), 'INATIVO') AS status_cliente,
+
+    -- Metadado de auditoria
+    CURRENT_TIMESTAMP() AS dth_processamento
+
+FROM ${ref("tb_cliente_raw")}

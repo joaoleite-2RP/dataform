@@ -1,0 +1,53 @@
+config {
+  type: "table",
+  schema: "curated",
+  tags: ["deduplicated", "curated"],
+  description: "Modelo de Deduplicação completa (TABLE). Identifica registros lógicos duplicados e preserva apenas a versão mais recente via QUALIFY ROW_NUMBER().",
+  bigquery: {
+    partitionBy: "DATE(dth_atualizacao)",
+    clusterBy: ["id_cliente"]
+  }
+}
+
+/*
+  ==============================================================================
+  OBJETIVO DA DEDUPLICAÇÃO (TABLE / CURATED):
+  ------------------------------------------------------------------------------
+  - Consome SEMPRE a camada normalizada (VIEW ou TABLE), nunca a RAW diretamente.
+  - Regra de Unicidade: Define a chave lógica (ex: id_cliente).
+  - Regra de Sobrevivência: Define qual registro prevalece (ex: maior dth_atualizacao).
+  - Critério de Desempate: Segundo critério para garantir determinismo (ex: maior dth_insert).
+  
+  POR QUE NÃO USAR DISTINCT:
+  - O SELECT DISTINCT remove apenas linhas 100% idênticas em todas as colunas.
+  - Se um mesmo cliente possui dois registros com timestamps de atualização diferentes,
+    o DISTINCT manteria ambos, gerando duplicidade lógica.
+    
+  ATENÇÃO AO PARTICIONAMENTO:
+  - O particionamento físico (bigquery.partitionBy) organiza os arquivos de dados em disco.
+  - O agrupamento da deduplicação (PARTITION BY na window function) avalia o ciclo de
+    vida do registro em toda a tabela, independentemente da partição de data.
+  ==============================================================================
+*/
+
+SELECT
+    id_cliente,
+    nome_cliente,
+    email,
+    valor,
+    dt_nascimento,
+    dth_atualizacao,
+    dth_insert,
+    status_cliente,
+    dth_processamento
+
+-- Consome a camada normalizada
+FROM ${ref("normalizacao_table")}
+
+-- Filtra apenas o registro vencedor para cada chave lógica
+QUALIFY ROW_NUMBER() OVER (
+    PARTITION BY id_cliente
+    ORDER BY
+        dth_atualizacao DESC,
+        dth_insert DESC
+) = 1
