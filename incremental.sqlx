@@ -56,7 +56,8 @@ ${when(incremental(), `
   -- Janela de tolerância para dados atrasados (Late-arriving data)
   WHERE dth_atualizacao >= TIMESTAMP_SUB(
       CURRENT_TIMESTAMP(),
-      INTERVAL 7 DAY
+    -- Intervalo de um dia para o processamento incremental
+      INTERVAL 1 DAY 
   )
 `, `
   -- Executado apenas na primeira carga (carga full inicial)
@@ -82,3 +83,98 @@ QUALIFY ROW_NUMBER() OVER (
         dth_atualizacao DESC,
         dth_insert DESC
 ) = 1
+
+
+
+
+
+
+
+
+
+
+
+---------------------------------------------------------------------------------------------------
+
+
+* View:
+    ```sql
+    CREATE OR REPLACE VIEW `${visao_raw_evento}` AS
+    SELECT
+        SAFE_CAST() AS coluna_01,
+        SAFE_CAST() AS coluna_02,
+        SAFE_CAST() AS coluna_03,
+ 
+        dth_insert,
+    FROM `${raw_evento}`
+    ```
+
+    
+* Execução incremental:
+    * Início da execução do processo:
+        ```sql
+        SET dth_inicio_execucao = CURRENT_TIMESTAMP();
+        ```
+    * Carrega da `processo_log` o último período processado:
+        ```sql
+        SET (last_dth_ini_movimento, last_dth_fim_movimento) = (
+            SELECT
+                dth_ini_movimento,
+                dth_fim_movimento
+            FROM `${processo_log}`
+            WHERE nom_processo = @nom_processo
+              AND nom_tabela = @nom_tabela
+            ORDER BY dth_log DESC
+            LIMIT 1
+        );
+        ```
+    * Carrega uma lista distinta de datas estáticas da visão que serão comparadas com a tabela alvo e a maior data de ingestão do registro:
+        ```sql
+        SET (data_registro_inserido_origem_list, max_dth_insert) = (
+            SELECT
+                ARRAY_AGG(DISTINCT coluna_ins IGNORE NULLS ORDER BY coluna_ins) AS data_registro_inserido_origem,
+                MAX(dth_insert) AS max_dth_insert,
+            FROM `${visao_raw_evento}`
+            WHERE dth_insert > last_dth_fim_movimento
+        );
+        ```
+    * Configura o script para atualização incremental:
+        ```json
+        config{
+            type: "incremental",
+            uniqueKey: ["coluna_id"],
+            updatePartitionFilter: "coluna_ins IN UNNEST(data_registro_inserido_origem_list)",
+            ...
+        }
+        ```
+    * Seleciona da visão os registros ainda não processados:
+        ```sql
+        SELECT
+            *
+        FROM `${visao_raw_evento}`
+        WHERE dth_insert > last_dth_fim_movimento AND dth_insert <= max_dth_insert
+        QUALIFY ROW_NUMBER() OVER (PARTITION BY coluna_id ORDER BY COALESCE(coluna_upd, coluna_ins) DESC)
+        ;
+        ```
+    * Extrair métricas de ingestão:
+        ```sql
+        SET (after_rows_count, atual_ult_data_processada) = (
+            SELECT
+                COUNT(*) AS after_rows_count,
+                MAX(COALESCE(coluna_upd, coluna_ins)) AS atual_ult_data_processada,
+            FROM `${self()}`
+            WHERE coluna_ins IN UNNEST(data_registro_inserido_origem_list)
+              AND (dth_insert > last_dth_fim_movimento AND dth_insert <= max_dth_insert)
+        );
+        ```
+    * Salva o período ingerido na `processo_log`:
+        * `dth_log`: CURRENT_TIMESTAMP()
+        * `nom_processo`: @nom_processo
+        * `nom_tabela`: @nom_tabela
+        * `dth_ini_movimento`: last_dth_fim_movimento
+        * `dth_fim_movimento`: max_dth_insert
+        * `dth_ult_data_processada`: max_dth_insert
+        * `dth_inicio_execucao`: dth_inicio_execucao
+        * `dth_fim_execucao`: CURRENT_TIMESTAMP()
+        * `qtd_linha_gravada_tab`: after_rows_count
+        * `des_ocorrencia`: SUCESSO

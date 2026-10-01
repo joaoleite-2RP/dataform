@@ -5,7 +5,8 @@ config {
   description: "Modelo de Normalização (TABLE). Materializa uma fronteira física entre RAW e dados tratados, otimizando consultas subsequentes.",
   bigquery: {
     partitionBy: "DATE(dth_atualizacao)",
-    clusterBy: ["id_cliente"]
+    clusterBy: ["id_cliente"] // chave que será usada para agrupar os dados fisicamente, otimizando consultas frequentes
+    
   }
 }
 
