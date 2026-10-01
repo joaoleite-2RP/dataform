@@ -22,14 +22,14 @@ config {
   ==============================================================================
 */
 
+* View:
+    ```sql
+    CREATE OR REPLACE VIEW `${visao_raw_evento}` AS
+
 SELECT
     -- Identificador e chaves lógicas
     CAST(id AS INT64) AS id_cliente,
 
-    -- Padronização de strings
-    UPPER(TRIM(nome)) AS nome_cliente,
-    LOWER(TRIM(email)) AS email,
-    
     -- Conversões seguras de valores numéricos
     SAFE_CAST(valor AS NUMERIC) AS valor,
     
@@ -44,4 +44,7 @@ SELECT
     -- Metadado de auditoria do processamento
     CURRENT_TIMESTAMP() AS dth_processamento
 
-FROM ${ref("tb_cliente_raw")}
+    FROM `${raw_evento}`
+    ```
+
+    

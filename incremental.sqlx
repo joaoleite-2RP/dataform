@@ -97,19 +97,7 @@ QUALIFY ROW_NUMBER() OVER (
 ---------------------------------------------------------------------------------------------------
 
 
-* View:
-    ```sql
-    CREATE OR REPLACE VIEW `${visao_raw_evento}` AS
-    SELECT
-        SAFE_CAST() AS coluna_01,
-        SAFE_CAST() AS coluna_02,
-        SAFE_CAST() AS coluna_03,
- 
-        dth_insert,
-    FROM `${raw_evento}`
-    ```
 
-    
 * Execução incremental:
     * Início da execução do processo:
         ```sql
