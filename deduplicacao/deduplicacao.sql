@@ -1,7 +1,7 @@
 config {
   type: "table",
-  schema: "curated",
-  tags: ["deduplicated", "curated"],
+  schema: "novucard_deduplication",
+  tags: ["deduplicated", "novucard_deduplication"],
   description: "Modelo de Deduplicação completa (TABLE). Identifica registros lógicos duplicados e preserva apenas a versão mais recente via QUALIFY ROW_NUMBER().",
   bigquery: {
     partitionBy: "DATE(dth_atualizacao)",

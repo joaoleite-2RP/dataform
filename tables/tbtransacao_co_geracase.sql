@@ -13,13 +13,13 @@ SELECT
   SAFE_CAST(JSON_VALUE(data, '$.usu_id_ins') AS INT64) AS usu_id_ins,
   SAFE_CAST(JSON_VALUE(data, '$.usu_id_upd') AS INT64) AS usu_id_upd,
   SAFE_CAST(JSON_VALUE(data, '$.grp_cd') AS INT64) AS grp_cd,
-  SAFE_CAST(JSON_VALUE(data, '$.msgitfhead_id') AS INT64) AS msgitfhead_id,
   SAFE_CAST(JSON_VALUE(data, '$.org_cd') AS INT64) AS org_cd,
   SAFE_CAST(JSON_VALUE(data, '$.regrexpr_id') AS INT64) AS regrexpr_id,
   SAFE_CAST(JSON_VALUE(data, '$.regrhead_cd') AS INT64) AS regrhead_cd,
 
-  -- STRING
+  -- STRING OR TEXT
   SAFE_CAST(JSON_VALUE(data, '$.servanl_cd') AS STRING) AS servanl_cd,
+  SAFE_CAST(JSON_VALUE(data, '$.msgitfhead_id') AS STRING) AS msgitfhead_id,
 
   -- Padronização de datas e timestamps
   SAFE_CAST(JSON_VALUE(data, '$.trs_dh') AS TIMESTAMP) AS trs_dh,
